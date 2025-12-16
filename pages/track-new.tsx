@@ -1,10 +1,36 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect } from 'react';
 import { NextPage } from 'next';
 import Head from 'next/head';
 import { useRouter } from 'next/router';
 import { supabase } from '../lib/supabase';
+import { ORIGINAL_SHIPMENT_STAGES } from '../lib/shipmentStages';
+import { getCurrentSubStage } from '../lib/autoSubStageProgression';
 import MainNav from '../components/MainNav';
-import { FaShip, FaPlane, FaTruck, FaTrain, FaFileAlt, FaDownload, FaBox, FaCube, FaImage, FaFile, FaFilePdf, FaFileWord, FaFileExcel, FaSearch, FaArrowLeft, FaChevronUp, FaChevronDown, FaEye, FaClock } from 'react-icons/fa';
+import ShipmentTimeline from '../components/ShipmentTimeline';
+import { FaShip, FaPlane, FaTruck, FaTrain, FaFileAlt, FaDownload, FaBox, FaCube, FaImage, FaFile, FaFilePdf, FaFileWord, FaFileExcel, FaSearch, FaArrowLeft, FaClock } from 'react-icons/fa';
+
+// Function to convert sub-stage ID to description
+const getSubStageDescription = (subStage: string): string => {
+  const subStageMap: { [key: string]: string } = {
+    'stage_1': 'Shipment information received by Befach',
+    'stage_2': 'Picked up from supplier warehouse',
+    'stage_3': 'Package received at Befach export facility',
+    'stage_4': 'Customs export clearance submitted',
+    'stage_5': 'Export clearance completed',
+    'stage_6': 'Departed from Shenzhen International Airport',
+    'stage_7': 'Arrived at transit hub',
+    'stage_8': 'Departed transit hub',
+    'stage_9': 'Arrived at port of entry',
+    'stage_10': 'Document verification initiated (Customs)',
+    'stage_11': 'Import duty & GST assessment under process',
+    'stage_12': 'Customs inspection & clearance completed',
+    'stage_13': 'Handed over to Befach local delivery hub',
+    'stage_14': 'Out for delivery',
+    'stage_15': 'Delivered'
+  };
+  
+  return subStageMap[subStage] || subStage;
+};
 
 const styles = `
   @keyframes scroll {
@@ -64,17 +90,52 @@ const styles = `
   }
 `;
 
+// Define the shipment type
+interface Shipment {
+  id: string;
+  tracking_id: string;
+  status: string;
+  subStage?: string;
+  shipment_name?: string;
+  origin_city?: string;
+  origin_country?: string;
+  destination_city?: string;
+  destination_country?: string;
+  current_location_city?: string;
+  current_location_country?: string;
+  transport_mode?: string;
+  estimated_delivery?: string;
+  package_count?: number;
+  package_type?: string;
+  weight?: number;
+  dimensions?: string;
+  contents?: string;
+  pickup_dispatched_through?: string;
+  transit_dispatched_through?: string;
+  customer_dispatched_through?: string;
+  hs_code?: string;
+  customer_delivery_address?: string;
+  shipment_notes?: string;
+  shipper_name?: string;
+  shipper_address?: string;
+  buyer_name?: string;
+  buyer_address?: string;
+  client_email?: string;
+  client_phone?: string;
+  transit_start_date?: string;
+  created_at: string;
+  updated_at?: string;
+}
+
 const TrackNewPage: NextPage = () => {
   const router = useRouter();
   const [trackingId, setTrackingId] = useState('');
-  const [shipment, setShipment] = useState(null);
+  const [shipment, setShipment] = useState<Shipment | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
-  const [stageMedia, setStageMedia] = useState([]);
-  const [shipmentDocuments, setShipmentDocuments] = useState([]);
-  const [showFullTimeline, setShowFullTimeline] = useState(false);
+  const [stageMedia, setStageMedia] = useState<any[]>([]);
+  const [shipmentDocuments, setShipmentDocuments] = useState<any[]>([]);
   const [currentStageIndex, setCurrentStageIndex] = useState(0);
-  const timelineRef = useRef(null);
 
   // Handle URL parameters for direct tracking links
   useEffect(() => {
@@ -293,7 +354,7 @@ const TrackNewPage: NextPage = () => {
     if (fileType.startsWith('image/')) {
       return <FaImage className="text-blue-600 mr-3" />;
     } else if (fileType.includes('pdf')) {
-      return <FaFilePdf className="text-red-600 mr-3" />;
+      return <FaFilePdf className="text-blue-600 mr-3" />;
     } else if (fileType.includes('word') || fileType.includes('doc')) {
       return <FaFileWord className="text-blue-800 mr-3" />;
     } else if (fileType.includes('excel') || fileType.includes('sheet') || fileType.includes('xls')) {
@@ -369,7 +430,7 @@ const TrackNewPage: NextPage = () => {
   const determineCurrentStageIndex = () => {
     if (!shipment) return 0;
     
-    const stages = SHIPMENT_STAGES;
+    const stages = ORIGINAL_SHIPMENT_STAGES;
     const currentStage = shipment.status;
     const index = stages.findIndex(stage => stage === currentStage);
     return index >= 0 ? index : 0;
@@ -383,18 +444,9 @@ const TrackNewPage: NextPage = () => {
     }
   }, [shipment]);
 
-  // Define shipment stages
-  const SHIPMENT_STAGES = [
-    'Product Insurance',
-    'Supplier Payment',
-    'Packaging Approval from Customer',
-    'Pickup at Origin',
-    'In Transit to India',
-    'Customs Clearance',
-    'Dispatch to Befach Warehouse',
-    'Dispatch to Customer Warehouse',
-    'Estimated Delivery'
-  ];
+  // Removed 2-minute auto-refresh (reverted to 24-hour day-based progression)
+
+
 
   return (
     <>
@@ -433,7 +485,7 @@ const TrackNewPage: NextPage = () => {
               </form>
               
               {error && (
-                <div className="mt-4 p-4 bg-red-50 text-red-700 rounded-md">
+                <div className="mt-4 p-4 bg-blue-50 text-blue-700 rounded-md">
                   {error}
                 </div>
               )}
@@ -443,10 +495,10 @@ const TrackNewPage: NextPage = () => {
           // Show shipment details when a shipment is found
           <>
             {shipment.shipment_notes && (
-              <div className="mb-6 bg-red-50 border-2 border-red-500 rounded-lg p-4">
+              <div className="mb-6 bg-blue-50 border-2 border-blue-500 rounded-lg p-4">
                 <div className="flex items-center">
-                  <span className="text-red-600 font-medium text-lg">Important Note: </span>
-                  <span className="text-red-500 text-lg ml-2">{shipment.shipment_notes}</span>
+                  <span className="text-blue-600 font-medium text-lg">Important Note: </span>
+                  <span className="text-blue-500 text-lg ml-2">{shipment.shipment_notes}</span>
                 </div>
               </div>
             )}
@@ -454,7 +506,31 @@ const TrackNewPage: NextPage = () => {
             <div className="flex justify-between items-center mb-6">
               <div>
                 <h1 className="text-2xl font-bold text-gray-900">Shipment #{shipment.tracking_id}</h1>
-                <p className="text-gray-600">Current Status: <span className="font-medium">{shipment.status}</span></p>
+                <p className="text-gray-600">
+                  Current Status: <span className="font-medium">
+                    {shipment.status}
+                    {(() => {
+                      // Use automatic progression for "In Transit to India" if no manual sub-stage
+                      if (shipment.status === 'In Transit to India' && shipment.transit_start_date) {
+                        const currentSubStage = getCurrentSubStage(new Date(shipment.transit_start_date));
+                        return (
+                          <span className="text-purple-600 ml-2">
+                            - {getSubStageDescription(currentSubStage)}
+                          </span>
+                        );
+                      }
+                      // Fallback to manual sub-stage if available
+                      if (shipment.subStage) {
+                        return (
+                          <span className="text-purple-600 ml-2">
+                            - {getSubStageDescription(shipment.subStage)}
+                          </span>
+                        );
+                      }
+                      return null;
+                    })()}
+                  </span>
+                </p>
               </div>
               <button 
                 onClick={handleReset}
@@ -534,23 +610,23 @@ const TrackNewPage: NextPage = () => {
                         <div className="flex-1">
                           <p className="text-sm font-medium text-blue-800 mb-1">Last Updated</p>
                           <p className="text-lg font-semibold text-blue-900 mb-1">
-                            {formatLastUpdated(shipment.updated_at)}
+                            {formatLastUpdated(shipment.updated_at || '')}
                           </p>
                           <p className="text-sm text-blue-700 font-medium">
-                            {new Date(shipment.updated_at).toLocaleDateString('en-US', {
+                            {shipment.updated_at ? new Date(shipment.updated_at).toLocaleDateString('en-US', {
                               weekday: 'long',
                               year: 'numeric',
                               month: 'long',
                               day: 'numeric'
-                            })}
+                            }) : 'N/A'}
                           </p>
                           <p className="text-sm text-blue-600">
-                            {new Date(shipment.updated_at).toLocaleTimeString('en-US', {
+                            {shipment.updated_at ? new Date(shipment.updated_at).toLocaleTimeString('en-US', {
                               hour: '2-digit',
                               minute: '2-digit',
                               second: '2-digit',
                               hour12: true
-                            })}
+                            }) : 'N/A'}
                           </p>
                         </div>
                       </div>
@@ -656,175 +732,24 @@ const TrackNewPage: NextPage = () => {
                 {/* Timeline Card */}
                 <div className="bg-white shadow rounded-lg overflow-hidden">
                   <div className="p-6">
-                    <div className="flex justify-between items-center mb-6">
-                      <div>
-                        <h3 className="text-lg font-medium">Shipment Timeline</h3>
-                        <p className="text-sm text-gray-600 mt-1">
-                          Progress: {Math.round((currentStageIndex / (SHIPMENT_STAGES.length - 1)) * 100)}% Complete
-                        </p>
-                      </div>
-                      <button 
-                        onClick={() => setShowFullTimeline(!showFullTimeline)}
-                        className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
-                      >
-                        <FaEye className="mr-1" />
-                        {showFullTimeline ? 'Show Less' : 'View Full Timeline'}
-                      </button>
-                    </div>
-                    
                     <div className="mb-6">
-                      <div className="w-full bg-gray-200 rounded-full h-2.5">
-                        <div 
-                          className="bg-[#F39C12] h-2.5 rounded-full transition-all duration-500" 
-                          style={{ width: `${(currentStageIndex / (SHIPMENT_STAGES.length - 1)) * 100}%` }}
-                        ></div>
-                      </div>
+                      <h3 className="text-lg font-medium">Shipment Timeline</h3>
+                      <p className="text-sm text-gray-600 mt-1">
+                        Progress: {Math.round((currentStageIndex / (ORIGINAL_SHIPMENT_STAGES.length - 1)) * 100)}% Complete
+                      </p>
                     </div>
                     
-                    <div className="space-y-6" ref={timelineRef}>
-                      {SHIPMENT_STAGES.map((stage, index) => {
-                        // Determine if this stage should be shown
-                        const isCurrentStage = index === currentStageIndex;
-                        const isPreviousStage = index === currentStageIndex - 1;
-                        const isNextStage = index === currentStageIndex + 1;
-                        const shouldShow = showFullTimeline || isCurrentStage || isPreviousStage || isNextStage;
-                        
-                        // Skip rendering if not showing
-                        if (!shouldShow) return null;
-                        
-                        // Determine stage status
-                        const isCompleted = index < currentStageIndex;
-                        const isInProgress = index === currentStageIndex;
-                        const isPending = index > currentStageIndex;
-                        
-                        // Get stage dates (only for completed and in-progress stages)
-                        const getDummyDate = (offset) => {
-                          const date = new Date();
-                          date.setDate(date.getDate() + offset);
-                          return date.toLocaleDateString('en-US', {
-                            month: 'long',
-                            day: 'numeric',
-                            year: 'numeric'
-                          });
-                        };
-                        
-                        const stageDate = isCompleted ? getDummyDate(-5 + index) : 
-                                          isInProgress ? getDummyDate(0) : 
-                                          null;
-                        
-                        // Determine location to display
-                        const locationText = isCurrentStage ? 
-                          `${shipment.current_location_city || 'Unknown'}, ${shipment.current_location_country || 'Unknown'}` : 
-                          stage.includes('Origin') ? 
-                            `${shipment.origin_city || 'Unknown'}, ${shipment.origin_country || 'Unknown'}` :
-                            stage.includes('Transit') ?
-                              'In Transit' :
-                              `${shipment.current_location_city || 'Unknown'}, ${shipment.current_location_country || 'Unknown'}`;
-                        
-                        return (
-                          <div key={index} className="flex justify-between">
-                            <div className="flex">
-                              <div className="flex flex-col items-center mr-4">
-                                <div className={`w-3 h-3 rounded-full ${
-                                  isCompleted ? 'bg-green-500' : 
-                                  isInProgress ? 'bg-blue-500' : 
-                                  'bg-gray-300'
-                                }`}></div>
-                                {index < SHIPMENT_STAGES.length - 1 && (
-                                  <div className="h-full w-0.5 bg-gray-200"></div>
-                                )}
-                              </div>
-                              <div>
-                                <div className={`px-3 py-1 rounded-md inline-block mb-1 ${
-                                  isCompleted ? 'bg-green-50 text-green-800' : 
-                                  isInProgress ? 'bg-blue-50 text-blue-800' : 
-                                  'bg-gray-50 text-gray-500'
-                                }`}>
-                                  <span className="text-sm font-medium">
-                                    {isCompleted ? 'Completed' : 
-                                     isInProgress ? 'In Progress' : 
-                                     'Pending'}
-                                  </span>
-                                </div>
-                                <h4 className={`font-medium ${
-                                  isPending ? 'text-gray-400' : 'text-gray-800'
-                                }`}>{stage}</h4>
-                                {stageDate && (
-                                  <p className={`text-sm ${
-                                    isPending ? 'text-gray-400' : 'text-gray-500'
-                                  }`}>{stageDate}</p>
-                                )}
-                                {/* Show dispatched through info for each relevant stage */}
-                                {stage === 'Pickup at Origin' && shipment.pickup_dispatched_through && (
-                                  <p className="text-sm text-blue-600 mt-1">
-                                    Dispatched through: {shipment.pickup_dispatched_through}
-                                  </p>
-                                )}
-                                {stage === 'In Transit to India' && shipment.transit_dispatched_through && (
-                                  <p className="text-sm text-blue-600 mt-1">
-                                    Dispatched through: {shipment.transit_dispatched_through}
-                                  </p>
-                                )}
-                                {stage === 'Dispatch to Customer Warehouse' && shipment.customer_dispatched_through && (
-                                  <p className="text-sm text-blue-600 mt-1">
-                                    Dispatched through: {shipment.customer_dispatched_through}
-                                  </p>
-                                )}
-                                {stage === 'Estimated Delivery' && shipment.estimated_delivery && (
-                                  <p className="text-sm text-green-600 mt-1">
-                                    Expected: {new Date(shipment.estimated_delivery).toLocaleDateString('en-US', {
-                                      month: 'short',
-                                      day: 'numeric',
-                                      year: 'numeric'
-                                    })}
-                                  </p>
-                                )}
-                              </div>
-                            </div>
-                            
-                            {/* Show location on the right side */}
-                            {(isCompleted || isInProgress) && locationText && (
-                              <div className="flex items-center">
-                                <div className="text-right">
-                                  <span className="inline-block w-4 h-4 mr-1 text-blue-500">
-                                    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor">
-                                      <path fillRule="evenodd" d="M5.05 4.05a7 7 0 119.9 9.9L10 18.9l-4.95-4.95a7 7 0 010-9.9zM10 11a2 2 0 100-4 2 2 0 000 4z" clipRule="evenodd" />
-                                    </svg>
-                                  </span>
-                                  <span className={`font-medium ${isCurrentStage ? 'text-blue-600' : 'text-gray-700'}`}>
-                                    {locationText}
-                                  </span>
-                                </div>
-                              </div>
-                            )}
-                          </div>
-                        );
-                      })}
-                    </div>
+
                     
-                    {!showFullTimeline && SHIPMENT_STAGES.length > 3 && (
-                      <div className="flex justify-center mt-4">
-                        <button 
-                          onClick={() => setShowFullTimeline(true)}
-                          className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
-                        >
-                          <FaChevronDown className="mr-1" />
-                          Show All {SHIPMENT_STAGES.length} Stages
-                        </button>
-                      </div>
-                    )}
-                    
-                    {showFullTimeline && (
-                      <div className="flex justify-center mt-4">
-                        <button 
-                          onClick={() => setShowFullTimeline(false)}
-                          className="text-blue-600 hover:text-blue-800 flex items-center text-sm"
-                        >
-                          <FaChevronUp className="mr-1" />
-                          Show Less
-                        </button>
-                      </div>
-                    )}
+                    {/* FedEx-style Timeline Component */}
+                    <ShipmentTimeline 
+                      key={`timeline-${shipment.id}-${shipment.updated_at}-${Date.now()}`} // Force complete re-render with timestamp
+                      currentStage={shipment.status}
+                      subStage={shipment.subStage} // Pass the sub-stage data
+                      estimatedDelivery={shipment.estimated_delivery}
+                      transitStartDate={shipment.transit_start_date} // Pass transit start date for auto progression
+                      stageUpdatedDate={shipment.updated_at} // Pass stage updated date for auto progression
+                    />
                   </div>
                 </div>
                 

@@ -5,6 +5,8 @@ import { supabase } from '../../../../lib/supabase';
 import { useAuth } from '../../../../contexts/AuthContext';
 import Link from 'next/link';
 import { sendZohoFlowNotification, isValidEmail } from '../../../../lib/utils';
+import { ORIGINAL_SHIPMENT_STAGES } from '../../../../lib/shipmentStages';
+import { checkAndNotifyStageChange } from '../../../../lib/emailNotifications';
 // Remove direct import of email service - will use API route instead
 
 // Define an interface for the stage
@@ -19,17 +21,7 @@ export default function EditShipment() {
   const { id } = router.query;
   const { user, isAdmin } = useAuth();
   
-  // Predefined stages as a constant
-const SHIPMENT_STAGES = [
-  'Product Insurance',
-  'Supplier Payment',
-  'Packaging Approval from Customer',
-  'Pickup at Origin',
-  'In Transit to India',
-  'Customs Clearance',
-  'Dispatch to Befach Warehouse',
-  'Dispatch to Customer Warehouse'
-];
+
 
   const [formData, setFormData] = useState({
     tracking_id: '',
@@ -42,6 +34,7 @@ const SHIPMENT_STAGES = [
     current_city: '',
     current_country: '',
     status: '',
+    subStage: '', // New field for sub-stage selection
     transport_mode: '',
     estimated_delivery: '',
     package_count: 1,
@@ -69,6 +62,32 @@ const SHIPMENT_STAGES = [
   const [filePreviews, setFilePreviews] = useState<{[key: string]: string}>({});
   const [existingFiles, setExistingFiles] = useState<any[]>([]);
   const [previousStatus, setPreviousStatus] = useState('');
+
+  // Function to get sub-stages for each main stage based on the provided table
+  const getSubStagesForMainStage = (mainStage: string) => {
+    // Only show sub-stages for "In Transit to India" stage
+    if (mainStage === 'In Transit to India') {
+      return [
+        { id: 'stage_1', date: 'Monday, 18/08/25', time: '7:30 PM', status: 'Shipment information received by Befach', location: 'SHENZHEN CN' },
+        { id: 'stage_2', date: 'Wednesday, 20/08/25', time: '1:12 PM', status: 'Picked up from supplier warehouse', location: 'SHENZHEN CN' },
+        { id: 'stage_3', date: 'Wednesday, 20/08/25', time: '5:45 PM', status: 'Package received at Befach export facility', location: 'SHENZHEN CN' },
+        { id: 'stage_4', date: 'Wednesday, 20/08/25', time: '10:35 PM', status: 'Customs export clearance submitted', location: 'SHENZHEN CN' },
+        { id: 'stage_5', date: 'Thursday, 21/08/25', time: '9:40 AM', status: 'Export clearance completed', location: 'SHENZHEN CN' },
+        { id: 'stage_6', date: 'Thursday, 21/08/25', time: '11:05 PM', status: 'Departed from Shenzhen International Airport', location: 'SHENZHEN CN' },
+        { id: 'stage_7', date: 'Friday, 22/08/25', time: '3:25 AM', status: 'Arrived at transit hub', location: 'HONG KONG CN' },
+        { id: 'stage_8', date: 'Friday, 22/08/25', time: '6:45 AM', status: 'Departed transit hub', location: 'HONG KONG CN' },
+        { id: 'stage_9', date: 'Friday, 22/08/25', time: '12:10 PM', status: 'Arrived at port of entry', location: 'DELHI IN' },
+        { id: 'stage_10', date: 'Friday, 22/08/25', time: '12:30 PM', status: 'Document verification initiated (Customs)', location: 'DELHI IN' },
+        { id: 'stage_11', date: 'Friday, 22/08/25', time: '3:15 PM', status: 'Import duty & GST assessment under process', location: 'DELHI IN' },
+        { id: 'stage_12', date: 'Friday, 22/08/25', time: '6:50 PM', status: 'Customs inspection & clearance completed', location: 'DELHI IN' },
+        { id: 'stage_13', date: 'Saturday, 23/08/25', time: '8:40 AM', status: 'Handed over to Befach local delivery hub', location: 'DELHI IN' },
+        { id: 'stage_14', date: 'Saturday, 23/08/25', time: '10:20 AM', status: 'Out for delivery', location: 'DELHI IN' },
+        { id: 'stage_15', date: 'Saturday, 23/08/25', time: '11:45 AM', status: 'Delivered', location: 'DELHI IN' }
+      ];
+    }
+    // For all other stages, return empty array (no sub-stages)
+    return [];
+  };
 
   useEffect(() => {
     if (id) {
@@ -98,6 +117,7 @@ const SHIPMENT_STAGES = [
         current_city: data.current_location_city || '',
         current_country: data.current_location_country || '',
         status: data.status || 'Product Insurance',
+        subStage: data.subStage || '', // Add subStage field
         transport_mode: data.transport_mode || 'Air',
           estimated_delivery: data.estimated_delivery || '',
           package_count: data.package_count || 1,
@@ -198,6 +218,14 @@ const SHIPMENT_STAGES = [
       console.log('📱 Updated form data phone:', value);
     }
     
+    // Clear sub-stage when main stage changes (manual selection only)
+    if (name === 'status') {
+      setFormData(prev => ({
+        ...prev,
+        subStage: ''
+      }));
+    }
+    
     // If transport mode changes, update the estimated delivery date
     if (name === 'transport_mode') {
       recalculateETA(value);
@@ -268,6 +296,7 @@ const SHIPMENT_STAGES = [
         current_location_country: formData.current_country,
         current_location_city: formData.current_city,
         status: formData.status,
+        subStage: formData.subStage || null, // Add sub-stage field
         transport_mode: formData.transport_mode,
         estimated_delivery: formData.estimated_delivery || null,
         package_count: formData.package_count ? parseInt(formData.package_count.toString()) : 1,
@@ -286,6 +315,10 @@ const SHIPMENT_STAGES = [
         shipper_address: formData.shipper_address || null,
         buyer_name: formData.buyer_name || null,
         buyer_address: formData.buyer_address || null,
+        // Set transit_start_date when status changes to "In Transit to India"
+        transit_start_date: formData.status === 'In Transit to India' && previousStatus !== 'In Transit to India' 
+          ? new Date().toISOString() 
+          : undefined,
       };
 
       console.log("Starting shipment update...");
@@ -299,11 +332,12 @@ const SHIPMENT_STAGES = [
       // Get the current status from database for comparison
       const { data: currentShipment } = await supabase
         .from('shipments')
-        .select('status, client_email')
+        .select('status, client_email, "subStage"')
         .eq('id', id)
         .single();
 
       const currentStatus = currentShipment?.status;
+      const currentSubStage = currentShipment?.subStage;
       const clientEmail = currentShipment?.client_email || formData.client_email;
 
       const { error } = await supabase
@@ -313,30 +347,28 @@ const SHIPMENT_STAGES = [
       
       if (error) throw error;
 
-      // Send email notification if status changed and client email exists
+      // Send email notification for stage changes
+      try {
+        console.log('🔍 Email Debug - Current Status:', currentStatus);
+        console.log('🔍 Email Debug - Current Sub-stage:', currentSubStage);
+        console.log('🔍 Email Debug - New Status:', formData.status);
+        console.log('🔍 Email Debug - New Sub-stage:', formData.subStage);
+        
+        await checkAndNotifyStageChange(
+          formData.tracking_id,
+          { status: currentStatus, subStage: currentSubStage },
+          { status: formData.status, subStage: formData.subStage },
+          supabase
+        );
+        console.log('✅ Stage change email notification sent');
+      } catch (emailError) {
+        console.error('❌ Error sending stage change email:', emailError);
+        // Don't fail the update if email fails
+      }
+
+      // Send Zoho notification (keeping existing functionality)
       if (currentStatus !== formData.status && clientEmail && isValidEmail(clientEmail)) {
         try {
-          // Send email notification via API route
-          const response = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              emailType: 'status-update',
-              email: clientEmail,
-              shipmentData: updateData,
-              previousStatus,
-              newStatus: formData.status
-            }),
-          });
-          
-          const emailResult = await response.json();
-          if (emailResult.success) {
-            console.log('Status update email sent successfully');
-          } else {
-            console.error('Failed to send status update email:', emailResult.error);
-          }
-          
-          // Also send Zoho notification (keeping existing functionality)
           await sendZohoFlowNotification({
             event_type: 'stage_changed',
             tracking_id: formData.tracking_id,
@@ -351,7 +383,7 @@ const SHIPMENT_STAGES = [
           });
           console.log('Zoho notification sent successfully');
         } catch (error) {
-          console.error('Failed to send notifications:', error);
+          console.error('Failed to send Zoho notification:', error);
           // Don't fail the update if email fails
         }
       }
@@ -719,12 +751,37 @@ const SHIPMENT_STAGES = [
               required
             >
               <option value="">Select a stage</option>
-              {SHIPMENT_STAGES.map((stage) => (
+              {ORIGINAL_SHIPMENT_STAGES.map((stage) => (
                 <option key={stage} value={stage}>
                   {stage}
                 </option>
               ))}
             </select>
+            
+            {/* Sub-stage Selection - Only show when main stage is selected */}
+            {formData.status && (
+              <div className="mt-4">
+                <label htmlFor="subStage" className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Sub-stage for "{formData.status}"
+                </label>
+                <select
+                  id="subStage"
+                  name="subStage"
+                  value={formData.subStage || ''}
+                  onChange={handleChange}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                >
+                  <option value="">Select a sub-stage</option>
+                  {getSubStagesForMainStage(formData.status).map((subStage) => (
+                    <option key={subStage.id} value={subStage.id}>
+                      {subStage.date} • {subStage.time} • {subStage.status} • {subStage.location}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

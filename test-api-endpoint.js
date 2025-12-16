@@ -1,52 +1,53 @@
 require('dotenv').config({ path: '.env.local' });
 const fetch = require('node-fetch');
 
-async function testAPIEndpoint() {
-  console.log('🧪 Testing Next.js API Endpoint...\n');
+// Test script for the auto-update API endpoint
+// Make sure your development server is running first
 
-  const shipmentData = {
-    tracking_id: 'BEF-20250807-09991',
-    shipment_name: 'Test Package',
-    origin_country: 'India',
-    destination_country: 'USA',
-    estimated_delivery: '2024-12-20',
-    contents: 'Test Contents'
-  };
-
+async function testAutoUpdateAPI() {
   try {
-    console.log('📱 Testing /api/send-whatsapp endpoint...');
-    console.log('Phone: +919182992530');
-    console.log('Tracking ID:', shipmentData.tracking_id);
-
-    const response = await fetch('http://localhost:3000/api/send-whatsapp', {
+    console.log('🧪 Testing Auto-Update API Endpoint\n');
+    
+    // Test the API endpoint
+    const response = await fetch('http://localhost:3000/api/auto-update-substages', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        whatsappType: 'shipment-creation',
-        phone: '+919182992530',
-        clientName: 'Test Customer',
-        shipmentData: shipmentData
-      }),
+      headers: {
+        'Content-Type': 'application/json',
+      },
     });
 
-    console.log('Response Status:', response.status);
-    console.log('Response Headers:', response.headers);
-
-    if (response.ok) {
-      const result = await response.json();
-      console.log('✅ SUCCESS! API endpoint working');
-      console.log('Response:', result);
-    } else {
-      const errorText = await response.text();
-      console.log('❌ FAILED! API endpoint error');
-      console.log('Error Status:', response.status);
-      console.log('Error Text:', errorText);
+    const result = await response.json();
+    
+    console.log('📡 API Response:');
+    console.log('Status:', response.status);
+    console.log('Success:', result.success);
+    console.log('Message:', result.message);
+    
+    if (result.updated_shipments) {
+      console.log('\n📦 Updated Shipments:');
+      result.updated_shipments.forEach(shipment => {
+        console.log(`- ${shipment.tracking_id}: ${shipment.old_sub_stage} → ${shipment.new_sub_stage} (${shipment.days_elapsed} days elapsed)`);
+      });
     }
-
+    
+    if (result.errors && result.errors.length > 0) {
+      console.log('\n❌ Errors:');
+      result.errors.forEach(error => {
+        console.log(`- ${error.tracking_id}: ${error.error}`);
+      });
+    }
+    
+    console.log('\n📊 Summary:');
+    console.log('Total shipments:', result.summary?.total_shipments || 0);
+    console.log('Updated:', result.summary?.updated || 0);
+    console.log('Errors:', result.summary?.errors || 0);
+    
   } catch (error) {
-    console.log('❌ ERROR occurred:');
-    console.log('Error:', error.message);
+    console.error('❌ Error testing API:', error.message);
+    console.log('\n💡 Make sure your development server is running:');
+    console.log('npm run dev');
   }
 }
 
-testAPIEndpoint();
+// Run the test
+testAutoUpdateAPI();

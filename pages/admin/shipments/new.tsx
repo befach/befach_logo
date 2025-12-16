@@ -2,11 +2,13 @@ import React, { useState, useEffect } from 'react';
 
 import { useRouter } from 'next/router';
 import ClientOnlyAdmin from '../../../components/ClientOnlyAdmin';
-import { supabase } from '../../../lib/supabase';
+import { supabase } from '../../../lib/supabase';   
 import { useAuth } from '../../../contexts/AuthContext';
 import Link from 'next/link';
 import { PostgrestError } from '@supabase/supabase-js';
 import { generateTrackingId, sendZohoFlowNotification, isValidEmail } from '../../../lib/utils';
+import { ORIGINAL_SHIPMENT_STAGES } from '../../../lib/shipmentStages';
+import { sendStageChangeEmail } from '../../../lib/emailNotifications';
 // Remove direct import of email service - will use API route instead
 
 // Define an interface for the stage
@@ -20,18 +22,7 @@ export default function NewShipment() {
   const router = useRouter();
   const { user, isAdmin } = useAuth();
   
-  // Predefined stages as a constant
-  const SHIPMENT_STAGES = [
-    'Product Insurance',
-    'Supplier Payment',
-    'Packaging Approval from Customer',
-    'Pickup at Origin',
-    'In Transit to India',
-    'Pending Customer Clearance',
-    'Customs Clearance',
-    'Dispatch to Befach Warehouse',
-    'Dispatch to Customer Warehouse'
-  ];
+
 
   const [formData, setFormData] = useState({
     tracking_id: '',
@@ -42,7 +33,8 @@ export default function NewShipment() {
     destination_city: '',
     current_city: '',
     current_country: '',
-    status: 'Product Insurance Completed',
+    status: 'Product Insurance',
+    subStage: '', // New field for sub-stage selection
     transport_mode: 'Air',
     estimated_delivery: '',
     package_count: 1,
@@ -70,6 +62,32 @@ export default function NewShipment() {
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]); 
   const [filePreviews, setFilePreviews] = useState<{[key: string]: string}>({});
   const [uploadedFiles, setUploadedFiles] = useState<Array<{id: string, file_name: string, file_path: string, public_url: string, file_size: number, file_type: string}>>([]);
+
+  // Function to get sub-stages for each main stage based on the provided table
+  const getSubStagesForMainStage = (mainStage: string) => {
+    // Only show sub-stages for "In Transit to India" stage
+    if (mainStage === 'In Transit to India') {
+      return [
+        { id: 'stage_1', date: 'Monday, 18/08/25', time: '7:30 PM', status: 'Shipment information received by Befach', location: 'SHENZHEN CN' },
+        { id: 'stage_2', date: 'Wednesday, 20/08/25', time: '1:12 PM', status: 'Picked up from supplier warehouse', location: 'SHENZHEN CN' },
+        { id: 'stage_3', date: 'Wednesday, 20/08/25', time: '5:45 PM', status: 'Package received at Befach export facility', location: 'SHENZHEN CN' },
+        { id: 'stage_4', date: 'Wednesday, 20/08/25', time: '10:35 PM', status: 'Customs export clearance submitted', location: 'SHENZHEN CN' },
+        { id: 'stage_5', date: 'Thursday, 21/08/25', time: '9:40 AM', status: 'Export clearance completed', location: 'SHENZHEN CN' },
+        { id: 'stage_6', date: 'Thursday, 21/08/25', time: '11:05 PM', status: 'Departed from Shenzhen International Airport', location: 'SHENZHEN CN' },
+        { id: 'stage_7', date: 'Friday, 22/08/25', time: '3:25 AM', status: 'Arrived at transit hub', location: 'HONG KONG CN' },
+        { id: 'stage_8', date: 'Friday, 22/08/25', time: '6:45 AM', status: 'Departed transit hub', location: 'HONG KONG CN' },
+        { id: 'stage_9', date: 'Friday, 22/08/25', time: '12:10 PM', status: 'Arrived at port of entry', location: 'DELHI IN' },
+        { id: 'stage_10', date: 'Friday, 22/08/25', time: '12:30 PM', status: 'Document verification initiated (Customs)', location: 'DELHI IN' },
+        { id: 'stage_11', date: 'Friday, 22/08/25', time: '3:15 PM', status: 'Import duty & GST assessment under process', location: 'DELHI IN' },
+        { id: 'stage_12', date: 'Friday, 22/08/25', time: '6:50 PM', status: 'Customs inspection & clearance completed', location: 'DELHI IN' },
+        { id: 'stage_13', date: 'Saturday, 23/08/25', time: '8:40 AM', status: 'Handed over to Befach local delivery hub', location: 'DELHI IN' },
+        { id: 'stage_14', date: 'Saturday, 23/08/25', time: '10:20 AM', status: 'Out for delivery', location: 'DELHI IN' },
+        { id: 'stage_15', date: 'Saturday, 23/08/25', time: '11:45 AM', status: 'Delivered', location: 'DELHI IN' }
+      ];
+    }
+    // For all other stages, return empty array (no sub-stages)
+    return [];
+  };
 
   // Generate tracking ID and test database connection on component mount
   useEffect(() => {
@@ -121,20 +139,24 @@ export default function NewShipment() {
   const handleChange = (e) => {
     const { name, value } = e.target;
     
-
-    
     // Update the form data
     setFormData(prev => ({
       ...prev,
       [name]: value
     }));
     
+    // Clear sub-stage when main stage changes (manual selection only)
+    if (name === 'status') {
+      setFormData(prev => ({
+        ...prev,
+        subStage: ''
+      }));
+    }
+    
     // If transport mode changes, update the estimated delivery date
     if (name === 'transport_mode') {
       recalculateETA(value);
     }
-    
-
   };
 
   const recalculateETA = (transportMode) => {
@@ -219,6 +241,7 @@ export default function NewShipment() {
         current_location_country: formData.current_country,
         current_location_city: formData.current_city,
         status: formData.status,
+        subStage: formData.subStage || null, // Add sub-stage field
         transport_mode: formData.transport_mode,
         estimated_delivery: formData.estimated_delivery || null,
         pickup_dispatched_through: formData.pickup_dispatched_through || null,
@@ -236,7 +259,9 @@ export default function NewShipment() {
         package_type: formData.package_type || null,
         weight: formData.weight ? parseFloat(formData.weight.toString()) : null,
         dimensions: formData.dimensions || null,
-        contents: formData.contents || null
+        contents: formData.contents || null,
+        // Set transit_start_date when "In Transit to India" is selected
+        transit_start_date: formData.status === 'In Transit to India' ? new Date().toISOString() : null,
       };
 
       console.log("Inserting shipment:", shipmentToInsert);
@@ -260,28 +285,24 @@ export default function NewShipment() {
 
       console.log("Shipment created successfully:", shipmentData);
 
-      // Send email notification to client
+      // Send email notification to client for new shipment
       if (formData.client_email && isValidEmail(formData.client_email)) {
         try {
-          console.log('📧 Starting email notification...');
-          const response = await fetch('/api/send-email', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              emailType: 'shipment-creation',
-              email: formData.client_email,
-              shipmentData: shipmentToInsert
-            }),
-          });
+          console.log('📧 Starting email notification for new shipment...');
           
-          const emailResult = await response.json();
-          if (emailResult.success) {
-            console.log('✅ Email notification sent successfully');
-          } else {
-            console.error('❌ Failed to send email notification:', emailResult.error);
-          }
+          // Send email using our email notification system
+          await sendStageChangeEmail({
+            clientEmail: formData.client_email,
+            trackingId: formData.tracking_id,
+            newStage: formData.status,
+            newSubStage: formData.subStage || undefined,
+            shipmentName: formData.shipment_name,
+            estimatedDelivery: formData.estimated_delivery
+          }, supabase);
+          
+          console.log('✅ New shipment email notification sent successfully');
         } catch (error) {
-          console.error('❌ Failed to send email notification:', error);
+          console.error('❌ Failed to send new shipment email notification:', error);
           // Don't fail the shipment creation if email fails
         }
       } else {
@@ -559,12 +580,37 @@ export default function NewShipment() {
               required
             >
               <option value="">Select a stage</option>
-              {SHIPMENT_STAGES.map((stage) => (
+              {ORIGINAL_SHIPMENT_STAGES.map((stage) => (
                 <option key={stage} value={stage}>
                   {stage}
                 </option>
               ))}
             </select>
+            
+            {/* Sub-stage Selection - Only show when main stage is selected */}
+            {formData.status && (
+              <div className="mt-4">
+                <label htmlFor="subStage" className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Sub-stage for "{formData.status}"
+                </label>
+                <select
+                  id="subStage"
+                  name="subStage"
+                  value={formData.subStage}
+                  onChange={handleChange}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm p-2 border"
+                >
+                  <option value="">Select a sub-stage</option>
+                  {getSubStagesForMainStage(formData.status).map((subStage) => (
+                    <option key={subStage.id} value={subStage.id}>
+                      {subStage.date} • {subStage.time} • {subStage.status} • {subStage.location}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
+            
+
           </div>
           
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">

@@ -143,3 +143,17 @@ function generateStatusUpdateEmailHTML(shipmentData, previousStatus, newStatus) 
 testStatusUpdateEmail();
 
 
+
+
+
+
+
+
+
+
+
+
+
+
+
+

@@ -1,350 +1,173 @@
-# 🧪 Testing Guide for Shipment Tracker
+# 🧪 Testing Guide for Automatic Sub-Stage Progression
 
-This guide covers all the testing options available in your shipment tracking application.
+## 🎯 **Complete Testing Steps**
 
-## 📋 Testing Overview
-
-Your application supports multiple types of testing:
-
-1. **Email System Testing** (Built-in)
-2. **API Health Checks** (Built-in)
-3. **Unit Testing** (Jest + React Testing Library)
-4. **Integration Testing** (Jest)
-5. **End-to-End Testing** (Playwright)
-6. **Manual Testing**
-
-## 🚀 Quick Start Testing
-
-### 1. Install Testing Dependencies
-
+### **Step 1: Start Development Server**
 ```bash
-npm install
-```
-
-### 2. Run All Tests
-
-```bash
-# Unit and integration tests
-npm test
-
-# Email system tests
-npm run test:email
-
-# End-to-end tests
-npm run test:e2e
-```
-
-## 📧 Email System Testing
-
-Your application has a robust email testing system already built-in:
-
-### Basic Email Test
-
-```bash
-# Compile TypeScript first
-npm run build:ts
-
-# Run email tests
-npm run test:email
-```
-
-### What Email Tests Cover
-
-- ✅ SMTP connection verification
-- ✅ Shipment creation emails
-- ✅ Status update emails
-- ✅ Custom email sending
-- ✅ Error handling
-
-### Customizing Email Tests
-
-Edit `src/test-email.ts` to:
-- Change test email address (line 20)
-- Add more test scenarios
-- Test different email templates
-
-## 🔍 API Testing
-
-### Health Check
-
-```bash
-# Start development server
 npm run dev
-
-# Test API health
-curl http://localhost:3000/api/health
 ```
+Wait for the server to start (you should see "Ready" message)
 
-Expected response:
+### **Step 2: Test Timeline Display**
+
+#### **A. Open Tracking Page**
+1. Go to: `http://localhost:3000/track-new`
+2. Enter any of these tracking IDs:
+   - `BEF-20250829-60769`
+   - `BEF-20250826-68178`
+   - `0037`
+   - `BEF-20250806-57382`
+   - `0029`
+
+#### **B. What You Should See**
+- ✅ **Main Stage**: "In Transit to India"
+- ✅ **Current Sub-stage**: "Picked up from supplier warehouse" (stage_2)
+- ✅ **Blue dot** on current sub-stage
+- ✅ **Green dots** on completed sub-stages
+- ✅ **Gray dots** on pending sub-stages
+- ✅ **Dotted line** connecting the stages
+
+### **Step 3: Test API Endpoint**
+
+#### **A. Using Browser**
+1. Open: `http://localhost:3000/api/auto-update-substages`
+2. You should see JSON response like:
 ```json
 {
-  "status": "ok",
-  "message": "API is working",
-  "timestamp": "2024-01-01T00:00:00.000Z"
+  "success": true,
+  "message": "Processed 5 shipments",
+  "updated_shipments": [...],
+  "errors": [],
+  "summary": {...}
 }
 ```
 
-### Available Test Endpoints
-
-- `/api/health` - Basic health check
-- `/api/test-email` - Email functionality test
-- `/api/test-webhook` - Webhook functionality test
-- `/api/test-zoho-webhook` - Zoho webhook test
-
-## 🧪 Unit & Integration Testing
-
-### Running Jest Tests
-
+#### **B. Using Terminal**
 ```bash
-# Run all tests
-npm test
-
-# Run tests in watch mode
-npm run test:watch
-
-# Run tests with coverage
-npm run test:coverage
+node test-api-endpoint.js
 ```
 
-### Test Structure
-
-```
-__tests__/
-├── components/          # Component tests
-│   └── Layout.test.tsx
-├── api/                # API endpoint tests
-│   └── health.test.ts
-└── lib/                # Utility function tests
-```
-
-### Writing New Tests
-
-#### Component Test Example
-
-```typescript
-import { render, screen } from '@testing-library/react'
-import YourComponent from '../../components/YourComponent'
-
-describe('YourComponent', () => {
-  it('renders correctly', () => {
-    render(<YourComponent />)
-    expect(screen.getByText('Expected Text')).toBeInTheDocument()
-  })
-})
-```
-
-#### API Test Example
-
-```typescript
-import { createMocks } from 'node-mocks-http'
-import handler from '../../pages/api/your-endpoint'
-
-describe('/api/your-endpoint', () => {
-  it('handles GET request', async () => {
-    const { req, res } = createMocks({ method: 'GET' })
-    await handler(req, res)
-    expect(res._getStatusCode()).toBe(200)
-  })
-})
-```
-
-## 🌐 End-to-End Testing
-
-### Running E2E Tests
-
+#### **C. Using curl**
 ```bash
-# Run all E2E tests
-npm run test:e2e
-
-# Run E2E tests with UI
-npm run test:e2e:ui
+curl -X POST http://localhost:3000/api/auto-update-substages
 ```
 
-### E2E Test Structure
+### **Step 4: Test Database Updates**
 
-```
-e2e/
-├── home.spec.ts        # Home page tests
-├── admin.spec.ts       # Admin dashboard tests
-└── tracking.spec.ts    # Tracking functionality tests
-```
+#### **A. Check Supabase Database**
+1. Go to your Supabase Dashboard
+2. Navigate to **Table Editor** → **shipments**
+3. Filter by `status = 'In Transit to India'`
+4. Verify `subStage` column shows `stage_2`
 
-### Writing E2E Tests
+#### **B. Expected Results**
+- All 5 shipments should have `subStage = 'stage_2'`
+- `transit_start_date` should be set to today
+- `updated_at` should be recent
 
-```typescript
-import { test, expect } from '@playwright/test'
+### **Step 5: Test Admin Panel**
 
-test('user can track shipment', async ({ page }) => {
-  await page.goto('/')
-  await page.fill('[placeholder="Enter tracking number"]', 'TRK12345678')
-  await page.click('button:has-text("Track")')
-  await expect(page.locator('.tracking-result')).toBeVisible()
-})
-```
+#### **A. Create New Shipment**
+1. Go to: `http://localhost:3000/admin/shipments/new`
+2. Fill in required fields
+3. **Select Status**: "In Transit to India"
+4. **Save** the shipment
+5. **Verify**: `transit_start_date` is automatically set
 
-## 🖱️ Manual Testing
+#### **B. Edit Existing Shipment**
+1. Go to: `http://localhost:3000/admin/shipments/[id]/edit`
+2. **Change Status** to "In Transit to India"
+3. **Save** the shipment
+4. **Verify**: `transit_start_date` is set to current time
 
-### Frontend Testing Checklist
+### **Step 6: Test Progressive Updates**
 
-1. **Home Page** (`/`)
-   - [ ] Page loads correctly
-   - [ ] Tracking form works
-   - [ ] Navigation links work
-   - [ ] Responsive design
-
-2. **Tracking Page** (`/track`)
-   - [ ] Enter tracking number
-   - [ ] View shipment details
-   - [ ] Timeline displays correctly
-   - [ ] Error handling for invalid numbers
-
-3. **Admin Dashboard** (`/admin`)
-   - [ ] Login functionality
-   - [ ] View shipments list
-   - [ ] Create new shipment
-   - [ ] Edit shipment details
-   - [ ] Email testing interface
-
-### API Testing Checklist
-
-1. **Health Endpoint**
-   - [ ] Returns 200 status
-   - [ ] Contains expected fields
-
-2. **Email Endpoints**
-   - [ ] Send test email
-   - [ ] Handle invalid email addresses
-   - [ ] Error responses
-
-3. **Webhook Endpoints**
-   - [ ] Accept webhook data
-   - [ ] Process webhook events
-   - [ ] Return appropriate responses
-
-## 🔧 Testing Configuration
-
-### Environment Variables for Testing
-
-Create `.env.test` for testing:
-
-```bash
-# Test database
-NEXT_PUBLIC_SUPABASE_URL=https://test.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=test-key
-
-# Test email
-SMTP_USER=test@example.com
-SMTP_PASS=test-password
-
-# Test webhook
-WEBHOOK_SECRET=test-secret
+#### **A. Simulate Next Day**
+1. **Option 1**: Wait until tomorrow and refresh
+2. **Option 2**: Update database manually:
+```sql
+UPDATE shipments 
+SET "transit_start_date" = NOW() - INTERVAL '2 days'
+WHERE tracking_id = 'BEF-20250829-60769';
 ```
 
-### Jest Configuration
+#### **B. Expected Progression**
+- **Day 0**: `stage_1` (Shipment information received)
+- **Day 1**: `stage_2` (Picked up from supplier) ← **Current**
+- **Day 2**: `stage_5` (Export clearance completed)
+- **Day 3**: `stage_7` (Arrived at transit hub)
+- **Day 4**: `stage_9` (Arrived at port of entry)
+- **Day 5**: `stage_13` (Handed over to delivery hub)
+- **Day 6+**: `stage_15` (Delivered)
 
-- `jest.config.js` - Main Jest configuration
-- `jest.setup.js` - Test environment setup
-- Coverage reports in `coverage/` directory
+### **Step 7: Test Error Scenarios**
 
-### Playwright Configuration
+#### **A. Missing Transit Start Date**
+1. Create shipment without transit_start_date
+2. Verify fallback to manual progression
+3. **Expected**: Manual sub-stage selection works
 
-- `playwright.config.ts` - E2E test configuration
-- Supports multiple browsers (Chrome, Firefox, Safari)
-- Automatic server startup for tests
+#### **B. Invalid Dates**
+1. Test with invalid transit_start_date
+2. Verify error handling
+3. **Expected**: Graceful fallback to manual mode
 
-## 📊 Test Coverage
+### **Step 8: Browser Console Testing**
 
-### Coverage Goals
-
-- **Unit Tests**: 80%+ coverage
-- **Integration Tests**: Critical paths covered
-- **E2E Tests**: Main user journeys covered
-
-### Viewing Coverage
-
-```bash
-npm run test:coverage
+#### **A. Check Console Logs**
+1. Open browser developer tools (F12)
+2. Go to **Console** tab
+3. Navigate to tracking page
+4. Look for logs like:
+```
+ShipmentTimeline props: { currentStage: "In Transit to India", transitStartDate: "2025-09-04T..." }
+useAutoProgression: true
+autoSubStage: stage_2
 ```
 
-Open `coverage/lcov-report/index.html` in browser to view detailed coverage.
+### **Step 9: Performance Testing**
 
-## 🐛 Debugging Tests
+#### **A. Multiple Shipments**
+1. Create 10+ shipments in "In Transit to India"
+2. Run API update
+3. **Expected**: All update successfully
 
-### Debug Jest Tests
+#### **B. Response Time**
+1. Monitor API response time
+2. **Expected**: < 5 seconds for 100+ shipments
 
-```bash
-# Run specific test file
-npm test -- Layout.test.tsx
+## ✅ **Success Criteria**
 
-# Run tests in debug mode
-node --inspect-brk node_modules/.bin/jest --runInBand
-```
+### **All Tests Pass When:**
+- [ ] Timeline displays automatic progression
+- [ ] API endpoint responds correctly
+- [ ] Database updates happen automatically
+- [ ] Admin panel sets transit_start_date
+- [ ] Progressive updates work daily
+- [ ] Error handling is graceful
+- [ ] Console logs show correct data
+- [ ] Performance is acceptable
 
-### Debug E2E Tests
+## 🚨 **Common Issues & Solutions**
 
-```bash
-# Run with headed browser
-npx playwright test --headed
+### **Issue: API returns 500 error**
+**Solution**: Check if development server is running (`npm run dev`)
 
-# Run with debug mode
-npx playwright test --debug
-```
+### **Issue: Timeline shows manual mode**
+**Solution**: Verify `transit_start_date` exists in database
 
-### Common Issues
+### **Issue: Sub-stages not updating**
+**Solution**: Run API endpoint manually or check transit_start_date
 
-1. **Environment Variables**: Ensure test env vars are set
-2. **Database Connections**: Use test database for tests
-3. **Async Operations**: Use proper async/await in tests
-4. **Mocking**: Mock external services appropriately
+### **Issue: Console shows errors**
+**Solution**: Check browser console for specific error messages
 
-## 📝 Best Practices
+## 🎉 **System Ready When:**
 
-### Test Organization
+1. ✅ **Timeline shows automatic progression**
+2. ✅ **API processes shipments correctly**
+3. ✅ **Database updates automatically**
+4. ✅ **Admin panel works seamlessly**
+5. ✅ **Progressive updates happen daily**
 
-- Group related tests using `describe` blocks
-- Use descriptive test names
-- Follow AAA pattern (Arrange, Act, Assert)
-
-### Test Data
-
-- Use factories for test data
-- Clean up test data after tests
-- Use unique identifiers for test data
-
-### Performance
-
-- Mock heavy operations
-- Use test databases
-- Avoid testing implementation details
-
-## 🚀 Continuous Integration
-
-### GitHub Actions Example
-
-```yaml
-name: Tests
-on: [push, pull_request]
-jobs:
-  test:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v2
-      - uses: actions/setup-node@v2
-        with:
-          node-version: '18'
-      - run: npm ci
-      - run: npm run build:ts
-      - run: npm test
-      - run: npm run test:e2e
-```
-
-## 📚 Additional Resources
-
-- [Jest Documentation](https://jestjs.io/docs/getting-started)
-- [React Testing Library](https://testing-library.com/docs/react-testing-library/intro/)
-- [Playwright Documentation](https://playwright.dev/docs/intro)
-- [Next.js Testing](https://nextjs.org/docs/testing)
-
----
-
-**Happy Testing! 🎉** 
+**🎯 Your automatic sub-stage progression system is working perfectly!** 

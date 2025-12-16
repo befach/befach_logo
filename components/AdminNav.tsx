@@ -25,7 +25,7 @@ export default function AdminNav() {
           <div className="flex items-center">
             <Link href="/admin/dashboard" className="flex-shrink-0 flex items-center">
               <Image 
-                src="https://befach.com/cdn/shop/files/Befach_International_Logo_-__page-0001_b91962c0-94dc-443e-8952-80afadb4494d.jpg?v=1729750054&width=300" 
+                src="https://www.befach.com/_next/image?url=%2Fimages%2Fbefach_logo.png&w=384&q=75" 
                 alt="Befach International" 
                 width={180} 
                 height={50} 
