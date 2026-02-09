@@ -62,7 +62,7 @@ export default function AdminLogin() {
         <div className="max-w-md w-full space-y-8">
           <div className="text-center">
             <Image 
-              src="/images/befach-logo.png"
+              src="/befach-logo.png"
               alt="Befach International" 
               width={200} 
               height={60} 
