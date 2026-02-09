@@ -19,7 +19,7 @@ const MainNav = () => {
           <div className="flex items-center">
             <Link href="/" className="flex-shrink-0 flex items-center">
               <Image 
-                src="https://www.befach.com/_next/image?url=%2Fimages%2Fbefach_logo.png&w=384&q=75" 
+                src="/images/befach-logo.png"
                 alt="Befach International" 
                 width={200} 
                 height={60} 
